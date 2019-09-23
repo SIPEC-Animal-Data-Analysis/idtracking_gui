@@ -40,8 +40,9 @@ num_masks = args.num_masks
 print('loading masks')
 results = np.load('./example_data/masks/' + filename + '_SegResults.npy', allow_pickle=True)
 
-# limit now to 1000 frames for demo purposes
-results = results[:1000]
+# limit now to 1000 frames for demo purposes and limited masks
+results = results[:500]
+num_masks = 5
 
 # load a couple of frames
 fnames = []
