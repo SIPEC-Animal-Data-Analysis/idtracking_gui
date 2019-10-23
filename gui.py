@@ -18,14 +18,8 @@ parser = ArgumentParser()
 # TODO: prevent choosing frame too close to the interval ends
 # -- meting with valerio - ask for pc access so i can setup stuff
 ''' other todos
-masken die schon gelable sind -> kleiner text der indiziert welcher schon (andere färbe)
-unten - > kleine indication
 lokaler slider anstatt arrows -> fuer videos (=/- 5 minuets )
-globaler slider
-für jedes tier aehnlich viele Masken
 flag - einfach / vs. hard
-
-manual tag mode -> einschalten und Maske wechseln möglich -> grüne Masken durchwechseln
 
 upload mode - > oder so
 
@@ -123,8 +117,9 @@ class WindowHandler:
 		self.manual_mode = False
 		self.current_mask = 0
 		self.current_frame_focus = self.draw_random_frame()
-		self.previous_frame_focus = []
+		self.previous_frame_focus = None
 		self.current_frame = self.current_frame_focus
+		self.current_difficulty_flag = 'easy'
 		self.mask_focus = 0
 
 		self.mask_color_default_focus_frame = (125, 125, 125)
@@ -226,7 +221,7 @@ class WindowHandler:
 		draw = 0
 		while condition:
 			draw = np.random.randint(0, len(self.masks), 1)[0]
-			if window < draw < len(self.masks) - window:
+			if window < draw < len(self.masks) - window and draw not in self.results.keys():
 				condition = False
 		return draw
 
@@ -246,7 +241,7 @@ class WindowHandler:
 
 			# TODO: make relative
 			masked_img = img[int(center_y - 200):int(center_y + 200),
-						 int(center_x - 200):int(center_x + 200)]
+						int(center_x - 200):int(center_x + 200)]
 
 			# TODO: determine value or find best fixed
 			rescaled_img = rescale(masked_img, 2.5, multichannel=True)
@@ -257,6 +252,11 @@ class WindowHandler:
 						self.font, 4, (255, 255, 255), 2, cv2.LINE_AA)
 			cv2.imshow("output", curr_img)
 		return
+
+	def display_all_indicators(self):
+		for idx, indicator in enumerate(self.name_indicators.keys()):
+			cv2.putText(self.frames[self.current_frame], self.name_indicators[indicator] + ' : ' + str(indicator+1),
+						(10, 850 + 25*idx), self.font, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
 
 	def display_current_frame(self):
 		# if masks available, display them
@@ -295,13 +295,16 @@ class WindowHandler:
 		#     cv2.putText(self.frames[self.current_frame], 'Mask: ' + str(self.current_mask), (10, 100),
 		#                 self.font, 4, (255, 255, 255), 2, cv2.LINE_AA)
 
-		# previous result
-		if frameclick == ord('n'):
-			pass
-
+		# TODO: finish easy/hard flag
+		if frameclick == ord('h'):
+			self.current_difficulty_flag = 'hard'
 		# back to previous focus
-		if frameclick == ord('p') and self.previous_frame_focus:
-			self.current_frame = self.previous_frame_focus[-1]
+		if frameclick == ord('p') and self.previous_frame_focus is not None:
+			if self.previous_frame_focus < len(list(self.results.keys())):
+				self.current_frame = list(self.results.keys())[self.previous_frame_focus]
+				self.previous_frame_focus += 1
+			else:
+				self.previous_frame_focus += 0
 		# back to current focus
 		# FIXME: go through all previous focuses
 		if frameclick == ord('b') and self.previous_frame_focus:
@@ -355,11 +358,13 @@ class WindowHandler:
 				# change to next random frame if all masks labeled
 				if self.current_mask_focus == len(self.masks[self.current_frame_focus]['rois']) - 1:
 					print('setting new focus')
-					self.previous_frame_focus.append(self.current_frame_focus)
 					self.set_new_random_focus()
+					self.previous_frame_focus = 0
+					self.current_difficulty_flag = 'easy'
 				# otherwise next mask
 				else:
 					self.current_mask_focus += 1
+					self.current_difficulty_flag = 'easy'
 
 	def check_num_results(self):
 		if len(self.results) == self.num_masks:
@@ -369,6 +374,7 @@ class WindowHandler:
 
 	def update(self):
 		self.display_current_frame()
+		self.display_all_indicators()
 		self.check_keys()
 		self.clocked_save()
 		self.check_num_results()
