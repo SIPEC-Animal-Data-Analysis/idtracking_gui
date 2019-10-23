@@ -104,28 +104,45 @@ class WindowHandler:
         self.break_status = False
         self.num_masks = num_masks
 
-        # take random masks
-        self.random_mask_indexes = np.random.randint(0, len(self.masks), 1)
-
-        self.current_mask = 0
-        self.current_frame = self.random_mask_indexes[self.current_mask]
-
-        self.mask_focus = 0
+        self.results = {}
 
         # start timer for persistent saving
         self.start_time = time.time()
 
         # opencv params
 
-        cv2.namedWindow("output", cv2.WINDOW_NORMAL)  # Create window with freedom of dimensions
-        cv2.resizeWindow('output', window_size, window_size)
+        self.window_name = "output"
+
+
+        # cv2.namedWindow(self.window_name , cv2.WINDOW_NORMAL)  # Create window with freedom of dimensions
+        cv2.namedWindow(self.window_name, cv2.WINDOW_GUI_EXPANDED)
+        cv2.resizeWindow(self.window_name , window_size, window_size)
         self.font = cv2.FONT_HERSHEY_SIMPLEX
         self.bottomLeftCornerOfText = (512, 512)
         self.fontScale = 500
         self.fontColor = (0, 255, 0)
         self.lineType = 20
 
-        self.results = {}
+        self.manual_mode = False
+        self.current_mask = 0
+        self.current_frame_focus = self.draw_random_frame()
+        self.current_frame = self.current_frame_focus
+        self.mask_focus = 0
+
+        self.local_slider_window = 10
+        # TODO: fix local slider
+        # self.local_slider = cv2.createTrackbar("Local Slider", self.window_name,
+        #                                        self.current_frame-self.local_slider_window,
+        #                                        self.current_frame+self.local_slider_window, self.on_change)
+        self.global_slider = cv2.createTrackbar("Global Slider", self.window_name,
+                                               self.current_frame, len(self.frames)-1, self.on_change)
+
+
+    def on_change(self,
+                  int):
+        self.current_frame=int
+        # cv2.setTrackbarPos("Local Slider", self.window_name, int)
+        cv2.setTrackbarPos("Global Slider", self.window_name, int)
 
     # TODO:awggw
     def load_frames(self):
@@ -147,7 +164,7 @@ class WindowHandler:
     def display_mask(self,
                      current_mask,
                      focus=False):
-        if (self.current_frame == self.random_mask_indexes[self.current_mask]):
+        if (self.current_frame == self.current_frame_focus):
             # indicate mask
             cv2.rectangle(self.frames[self.current_frame],
                           (current_mask[1], current_mask[0]),
@@ -164,6 +181,20 @@ class WindowHandler:
         if(self.current_frame in self.results.keys()):
             pass
 
+    def draw_random_frame(self,
+                          window = 50):
+        condition = True
+        draw = 0
+        while(condition):
+            draw = np.random.randint(0, len(self.masks), 1)[0]
+            if(draw>window and draw<len(self.masks)-window):
+                condition=False
+        return draw
+
+    def set_new_random_focus(self):
+        self.current_mask += 1
+        self.current_frame_focus = self.draw_random_frame()
+        self.current_frame = self.current_mask_focus
 
         # # TODO:
         # for res in own results:
@@ -234,23 +265,29 @@ class WindowHandler:
         # zoom in
         if (frameclick == ord('=')):
             self.zoom = True
-
         # zoom out
         if (frameclick == ord('-')):
             self.zoom = False
-
         # change mask focus increasing
         if (frameclick == ord('.')):
             self.current_mask_focus += 1
-
         # change mask focus decreasing
         if (frameclick == ord(',')):
             self.current_mask_focus -= 1
-
         # TODO: implement
         # manual mode trigger
-        # if (frameclick == ord('m')):
-        #     self.
+        if (frameclick == ord('m')):
+            self.manual_mode = not self.manual_mode
+            if(self.manual_mode):
+                self.current_frame_focus = self.current_frame
+            else:
+                self.current_frame_focus = self.draw_random_frame()
+                self.current_frame = self.current_mask_focus
+        # skipping a mask
+        #TODO: fix what is results
+        if (frameclick == ord('d')):
+            self.results.append([self.frames[idx], self.masks[idx], 'd'])
+            _idx += 1
 
         for j in range(1, 5):
             if (frameclick == ord(str(j))):
@@ -261,23 +298,7 @@ class WindowHandler:
                     'current_mask' : self.current_mask_focus,
                     'identity' : self.name_indicators[j-1],
                 }
-                self.current_mask += 1
-                self.current_frame = self.random_mask_indexes[self.current_mask]
-                # TODO: implement this, or rather sample new random spots instead of prefixed list
-                # try:
-                #     self.current_frame = idxs[_idx]
-                # except IndexError:
-                #     continue
-        # skip a mask
-        # # FIXME: index errors at end
-        # if (frameclick == ord('d')):
-        #     self.results.append([self.frames[idx], self.masks[idx], 'd'])
-        #     _idx += 1
-        #     try:
-        #         idx = idxs[_idx]
-        #     except IndexError:
-        #         continue
-        # pass
+                self.set_new_random_focus()
 
     def check_num_results(self):
         if(len(self.results) == self.num_masks):
@@ -291,15 +312,6 @@ class WindowHandler:
         self.clocked_save()
         self.check_num_results()
         return self.break_status
-
-
-
-
-# FIXME: end when all masks
-    # # gone through all masks
-    # if (_idx == len(idxs)):
-    #     break
-
 
 
 def main():
