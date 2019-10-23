@@ -23,7 +23,6 @@ flag - einfach / vs. hard
 
 upload mode - > oder so
 
-
 Masken und identification -> fps -> uebersichts data frame
 
 menschenliches Gesicht ausschneiden???? —> extra interface point
@@ -63,14 +62,6 @@ parser.add_argument('--window_size',
 					default=1024,
 					help='size of the GUI in pixels')
 
-
-## look in results sink for already annotated data
-# try:
-#   annotations = (results_sink + 'IDresults_' + filename + '.npy')
-#   print('Loading previous annotations')
-# except FileNotFoundError:
-#   continue
-
 class WindowHandler:
 	frames = None
 	current_frame = None
@@ -97,8 +88,6 @@ class WindowHandler:
 		self.break_status = False
 		self.num_masks = num_masks
 
-		self.results = {}
-
 		# start timer for persistent saving
 		self.start_time = time.time()
 
@@ -114,10 +103,17 @@ class WindowHandler:
 		self.fontColor = (0, 255, 0)
 		self.lineType = 20
 
+		try:
+			self.results = self.load_data()
+			self.previous_frame_focus = 0
+			print('Loading previous annotations')
+		except FileNotFoundError:
+			self.results = {}
+			self.previous_frame_focus = None
+
 		self.manual_mode = False
 		self.current_mask = 0
 		self.current_frame_focus = self.draw_random_frame()
-		self.previous_frame_focus = None
 		self.current_frame = self.current_frame_focus
 		self.current_difficulty_flag = 'easy'
 		self.mask_focus = 0
@@ -129,21 +125,21 @@ class WindowHandler:
 
 		self.local_slider_window = 10
 		# TODO: fix local slider
-		# self.local_slider = cv2.createTrackbar("Local Slider", self.window_name,
-		#                                        self.current_frame-self.local_slider_window,
-		#                                        self.current_frame+self.local_slider_window, self.on_change)
+		self.local_slider = cv2.createTrackbar("Local Slider", self.window_name,
+											   self.current_frame-self.local_slider_window,
+											   self.current_frame+self.local_slider_window, self.on_change)
 		self.global_slider = cv2.createTrackbar("Global Slider", self.window_name,
 												self.current_frame, len(self.frames) - 1, self.on_change)
 
 	def on_change(self,
 				  int):
 		self.current_frame = int
-		# cv2.setTrackbarPos("Local Slider", self.window_name, int)
 		cv2.setTrackbarPos("Global Slider", self.window_name, int)
-
-	# TODO:awggw
-	def load_frames(self):
-		pass
+		cv2.setTrackbarPos("Local Slider", self.window_name, int)
+		# cv2.setTrackbarMin("Local Slider", winname = self.window_name,
+		# 				minval = int - self.local_slider_window)
+		# cv2.setTrackbarMax("Local Slider", winname = self.window_name,
+		# 				maxval = int - self.local_slider_window)
 
 	def close(self):
 		print('writing data, do not interrupt!')
@@ -153,6 +149,9 @@ class WindowHandler:
 
 	def save_data(self):
 		np.save(self.results_sink + 'IDresults_' + self.filename + '.npy', self.results)
+
+	def load_data(self):
+		return np.load(self.results_sink + 'IDresults_' + self.filename + '.npy', allow_pickle=True).item()
 
 	def clocked_save(self):
 		if (time.time() - self.start_time) % 300 < 0.055:
@@ -166,9 +165,6 @@ class WindowHandler:
 					   mask_id=None):
 		cv2.rectangle(frame, (mask[1], mask[0]), (mask[3], mask[2]), color, 3)
 		if animal_id:
-			print('printing text')
-			# FIXME: better solution than random
-			randint = np.random.random_integers(0,1)
 			if mask_id==0:
 				cv2.putText(frame, animal_id,
 							(mask[1], mask[0]), self.font, 0.5, self.mask_color_labeled, 1, cv2.LINE_AA)
@@ -230,10 +226,16 @@ class WindowHandler:
 		self.current_frame_focus = self.draw_random_frame()
 		self.current_frame = self.current_frame_focus
 		self.current_mask_focus = 0
+
 		cv2.setTrackbarPos("Global Slider", self.window_name, self.current_frame)
+		cv2.setTrackbarPos("Local Slider", self.window_name, self.current_frame)
+		# cv2.setTrackbarMin("Local Slider", winname = self.window_name,
+		# 				minval = self.current_frame - self.local_slider_window)
+		# cv2.setTrackbarMax("Local Slider", winname = self.window_name,
+		# 				maxval = self.current_frame - self.local_slider_window)
 
 	def display_frame(self):
-		if (self.zoom):
+		if self.zoom:
 			img = self.frames[self.current_frame]
 			y1, x1, y2, x2 = self.masks[self.current_frame]['rois'][self.current_mask_focus]
 			center_x = float(x2 + x1) / 2.0
@@ -268,20 +270,17 @@ class WindowHandler:
 		except KeyError:
 			pass
 		self.display_frame()
-		# TODO: here in general: make a dict of usable keys and print them
-		# cv2.putText(curr_img, name_indicators[0], (10, 900),
-		#             self.font, 1, (255, 255, 255), 2, cv2.LINE_AA)
-		# indicate current frame
+
 		return
 
 	def check_keys(self):
 		frameclick = cv2.waitKey(1) & 0xFF
 		# quit
-		if (frameclick == ord('q')):
+		if frameclick == ord('q'):
 			self.break_status = True
-		if (frameclick == ord('a')):
+		if frameclick == ord('a'):
 			while (True):
-				if (cv2.waitKey(20) & 0xFF == ord('a')):
+				if cv2.waitKey(20) & 0xFF == ord('a'):
 					self.break_status = True
 				sleep(0.1)
 		# # next frame
@@ -306,7 +305,6 @@ class WindowHandler:
 			else:
 				self.previous_frame_focus += 0
 		# back to current focus
-		# FIXME: go through all previous focuses
 		if frameclick == ord('b') and self.previous_frame_focus:
 			self.current_frame = self.current_frame_focus
 		# zoom in
@@ -337,8 +335,8 @@ class WindowHandler:
 		if frameclick == ord('d'):
 			self.results.append([self.frames[idx], self.masks[idx], 'd'])
 			_idx += 1
-
-		for j in range(1, 5):
+		# labeling one of the primates
+		for j in range(1, len(self.name_indicators)+1):
 			if frameclick == ord(str(j)):
 				# TODO: multiple results are in same FOV
 				try:
@@ -426,12 +424,11 @@ def main():
 							  window_size)
 
 	while (True):
-		status = myhandler.update()
-		if (status):
+		break_status = myhandler.update()
+		if break_status:
 			myhandler.save_data()
 			break
 		sleep(0.05)
-
 
 if __name__ == '__main__':
 	main()
