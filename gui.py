@@ -122,7 +122,7 @@ class WindowHandler:
 		self.mask_color_default_focus_frame = (125, 125, 125)
 		self.mask_color_default = (75, 75, 75)
 		self.mask_color_focus = (0, 255, 0)
-		self.mask_color_labeled = (255, 0, 0)
+		self.mask_color_labeled = (0, 0, 255)
 
 		self.local_slider_window = 10
 		self.local_slider_lower_window = self.current_frame - self.local_slider_window
@@ -268,14 +268,14 @@ class WindowHandler:
 
 			# TODO: determine value or find best fixed
 			rescaled_img = rescale(masked_img, 2.5, multichannel=True)
-			cv2.imshow("output", rescaled_img)
+			cv2.imshow("output", cv2.cvtColor(rescaled_img, cv2.COLOR_BGR2RGB))
 		else:
 			curr_img = self.frames[self.current_frame]
 			cv2.putText(curr_img, 'Frame: ' + str(self.current_frame), (10, 200),
 						self.font, 4, (255, 255, 255), self.font_thickness, cv2.LINE_AA)
 			cv2.putText(curr_img, 'Mask: ' + str(len(self.results)+1), (10, 100),
 						self.font, 4, (255, 255, 255), self.font_thickness, cv2.LINE_AA)
-			cv2.imshow("output", curr_img)
+			cv2.imshow("output", cv2.cvtColor(curr_img, cv2.COLOR_BGR2RGB))
 		return
 
 	def display_all_indicators(self):
