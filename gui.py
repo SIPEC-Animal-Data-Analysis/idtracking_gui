@@ -102,6 +102,7 @@ class WindowHandler:
 		self.fontScale = 500
 		self.fontColor = (0, 255, 0)
 		self.lineType = 20
+		self.font_thickness = 1
 
 		try:
 			self.results = self.load_data()
@@ -124,22 +125,34 @@ class WindowHandler:
 		self.mask_color_labeled = (255, 0, 0)
 
 		self.local_slider_window = 10
+		self.local_slider_lower_window = self.current_frame - self.local_slider_window
+		self.local_slider_higher_window = self.current_frame + self.local_slider_window
 		# TODO: fix local slider
 		self.local_slider = cv2.createTrackbar("Local Slider", self.window_name,
-											   self.current_frame-self.local_slider_window,
-											   self.current_frame+self.local_slider_window, self.on_change)
+											   self.local_slider_lower_window,
+											   self.local_slider_higher_window, self.on_change_local)
 		self.global_slider = cv2.createTrackbar("Global Slider", self.window_name,
-												self.current_frame, len(self.frames) - 1, self.on_change)
+												self.current_frame, len(self.frames) - 1, self.on_change_global)
 
-	def on_change(self,
-				  int):
+	def on_change_local(self,
+						int):
+		self.current_frame = int
+		cv2.setTrackbarPos("Local Slider", self.window_name, int)
+		cv2.setTrackbarPos("Global Slider", self.window_name, int)
+
+	def on_change_global(self,
+						int):
 		self.current_frame = int
 		cv2.setTrackbarPos("Global Slider", self.window_name, int)
+		if not self.local_slider_lower_window < int < self.local_slider_higher_window:
+			self.local_slider_lower_window = int - self.local_slider_window
+			self.local_slider_higher_window = int + self.local_slider_window
+			cv2.setTrackbarMin("Local Slider", winname = self.window_name,
+							minval = self.local_slider_lower_window)
+			cv2.setTrackbarMax("Local Slider", winname = self.window_name,
+							maxval = self.local_slider_higher_window)
 		cv2.setTrackbarPos("Local Slider", self.window_name, int)
-		# cv2.setTrackbarMin("Local Slider", winname = self.window_name,
-		# 				minval = int - self.local_slider_window)
-		# cv2.setTrackbarMax("Local Slider", winname = self.window_name,
-		# 				maxval = int - self.local_slider_window)
+
 
 	def close(self):
 		print('writing data, do not interrupt!')
@@ -154,7 +167,8 @@ class WindowHandler:
 		return np.load(self.results_sink + 'IDresults_' + self.filename + '.npy', allow_pickle=True).item()
 
 	def clocked_save(self):
-		if (time.time() - self.start_time) % 300 < 0.055:
+		# save data every minute
+		if (time.time() - self.start_time) % 60 < 0.055:
 			self.save_data()
 
 	def mask_to_opencv(self,
@@ -167,16 +181,16 @@ class WindowHandler:
 		if animal_id:
 			if mask_id==0:
 				cv2.putText(frame, animal_id,
-							(mask[1], mask[0]), self.font, 0.5, self.mask_color_labeled, 1, cv2.LINE_AA)
+							(mask[1], mask[0]), self.font, 0.5, self.mask_color_labeled, self.font_thickness, cv2.LINE_AA)
 			if mask_id==1:
 				cv2.putText(frame, animal_id,
-							(mask[3], mask[2]), self.font, 0.5, self.mask_color_labeled, 1, cv2.LINE_AA)
+							(mask[3], mask[2]), self.font, 0.5, self.mask_color_labeled, self.font_thickness, cv2.LINE_AA)
 			if mask_id==2:
 				cv2.putText(frame, animal_id,
-							(mask[1], mask[2]), self.font, 0.5, self.mask_color_labeled, 1, cv2.LINE_AA)
+							(mask[1], mask[2]), self.font, 0.5, self.mask_color_labeled, self.font_thickness, cv2.LINE_AA)
 			if mask_id==3:
 				cv2.putText(frame, animal_id,
-							(mask[3], mask[0]), self.font, 0.5, self.mask_color_labeled, 1, cv2.LINE_AA)
+							(mask[3], mask[0]), self.font, 0.5, self.mask_color_labeled, self.font_thickness, cv2.LINE_AA)
 
 	def display_mask(self,
 					 mask_id,
@@ -213,12 +227,15 @@ class WindowHandler:
 
 	def draw_random_frame(self,
 						  window=50):
-		condition = True
 		draw = 0
-		while condition:
+		print(self.results.keys())
+		while True:
 			draw = np.random.randint(0, len(self.masks), 1)[0]
+			print(draw)
 			if window < draw < len(self.masks) - window and draw not in self.results.keys():
-				condition = False
+				print('True')
+				break
+			print('False')
 		return draw
 
 	def set_new_random_focus(self):
@@ -228,11 +245,15 @@ class WindowHandler:
 		self.current_mask_focus = 0
 
 		cv2.setTrackbarPos("Global Slider", self.window_name, self.current_frame)
+		if not self.local_slider_lower_window < self.current_frame < self.local_slider_higher_window:
+			self.local_slider_lower_window = self.current_frame - self.local_slider_window
+			self.local_slider_higher_window = self.current_frame + self.local_slider_window
+			cv2.setTrackbarMin("Local Slider", winname = self.window_name,
+							minval = self.local_slider_lower_window)
+			cv2.setTrackbarMax("Local Slider", winname = self.window_name,
+							maxval = self.local_slider_higher_window)
 		cv2.setTrackbarPos("Local Slider", self.window_name, self.current_frame)
-		# cv2.setTrackbarMin("Local Slider", winname = self.window_name,
-		# 				minval = self.current_frame - self.local_slider_window)
-		# cv2.setTrackbarMax("Local Slider", winname = self.window_name,
-		# 				maxval = self.current_frame - self.local_slider_window)
+
 
 	def display_frame(self):
 		if self.zoom:
@@ -251,14 +272,44 @@ class WindowHandler:
 		else:
 			curr_img = self.frames[self.current_frame]
 			cv2.putText(curr_img, 'Frame: ' + str(self.current_frame), (10, 200),
-						self.font, 4, (255, 255, 255), 2, cv2.LINE_AA)
+						self.font, 4, (255, 255, 255), self.font_thickness, cv2.LINE_AA)
+			cv2.putText(curr_img, 'Mask: ' + str(len(self.results)+1), (10, 100),
+						self.font, 4, (255, 255, 255), self.font_thickness, cv2.LINE_AA)
 			cv2.imshow("output", curr_img)
 		return
 
 	def display_all_indicators(self):
 		for idx, indicator in enumerate(self.name_indicators.keys()):
 			cv2.putText(self.frames[self.current_frame], self.name_indicators[indicator] + ' : ' + str(indicator+1),
-						(10, 850 + 25*idx), self.font, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+						(10, 850 + 25*idx), self.font, 0.5, (255, 255, 255), self.font_thickness, cv2.LINE_AA)
+
+
+	def display_all_keys(self):
+
+		##
+		dist_1 = 200
+		cv2.putText(self.frames[self.current_frame], 'p -- display previous mask',
+					(dist_1, 850 + 0), self.font, 0.5, (255, 255, 255), self.font_thickness, cv2.LINE_AA)
+		cv2.putText(self.frames[self.current_frame], 'b -- reset view to current mask',
+					(dist_1, 850 + 25), self.font, 0.5, (255, 255, 255), self.font_thickness, cv2.LINE_AA)
+		cv2.putText(self.frames[self.current_frame], 'm -- trigger manual mode on current frame',
+					(dist_1, 850 + 50), self.font, 0.5, (255, 255, 255), self.font_thickness, cv2.LINE_AA)
+		cv2.putText(self.frames[self.current_frame], 's -- skip current mask',
+					(dist_1, 850 + 75), self.font, 0.5, (255, 255, 255), self.font_thickness, cv2.LINE_AA)
+
+		##
+		dist_2 = 600
+		cv2.putText(self.frames[self.current_frame], '. -- change mask to focus on forward',
+					(dist_2, 850 + 0), self.font, 0.5, (255, 255, 255), self.font_thickness, cv2.LINE_AA)
+		cv2.putText(self.frames[self.current_frame], ', -- change mask to focus on backward',
+					(dist_2, 850 + 25), self.font, 0.5, (255, 255, 255), self.font_thickness, cv2.LINE_AA)
+		cv2.putText(self.frames[self.current_frame], '= -- zoom in',
+					(dist_2, 850 + 50), self.font, 0.5, (255, 255, 255), self.font_thickness, cv2.LINE_AA)
+		cv2.putText(self.frames[self.current_frame], '- -- zoom out',
+					(dist_2, 850 + 75), self.font, 0.5, (255, 255, 255), self.font_thickness, cv2.LINE_AA)
+
+		pass
+
 
 	def display_current_frame(self):
 		# if masks available, display them
@@ -267,7 +318,7 @@ class WindowHandler:
 			for mask_id, mask in enumerate(current_masks):
 				self.display_mask(mask_id,
 								  mask)
-		except KeyError:
+		except IndexError:
 			pass
 		self.display_frame()
 
@@ -373,10 +424,12 @@ class WindowHandler:
 	def update(self):
 		self.display_current_frame()
 		self.display_all_indicators()
+		self.display_all_keys()
 		self.check_keys()
 		self.clocked_save()
 		self.check_num_results()
 		return self.break_status
+
 
 
 def main():
