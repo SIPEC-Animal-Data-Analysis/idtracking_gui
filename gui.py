@@ -138,7 +138,8 @@ class WindowHandler:
 		self.frames = []
 		self.frames_mult = 99999
 		self.load_frames(0,
-		                 self.frames_length)
+		                 # self.frames_length)
+		                 500)
 		# self.load_frames(max(self.local_slider_lower_window * self.frames_mult , 0),
 		#                  min(self.local_slider_higher_window * self.frames_mult, self.frames_length - 1))
 
@@ -343,8 +344,10 @@ class WindowHandler:
 					(dist_1, 850 + 25), self.font, 0.5, (255, 255, 255), self.font_thickness, cv2.LINE_AA)
 		cv2.putText(self.frames[self.current_frame], 'm -- trigger manual mode on current frame',
 					(dist_1, 850 + 50), self.font, 0.5, (255, 255, 255), self.font_thickness, cv2.LINE_AA)
-		cv2.putText(self.frames[self.current_frame], 's -- skip current mask',
+		cv2.putText(self.frames[self.current_frame], 'w -- wrong mask (not a primate)',
 					(dist_1, 850 + 75), self.font, 0.5, (255, 255, 255), self.font_thickness, cv2.LINE_AA)
+		cv2.putText(self.frames[self.current_frame], 't -- too difficult to annotate',
+					(dist_1, 850 + 100), self.font, 0.5, (255, 255, 255), self.font_thickness, cv2.LINE_AA)
 
 		##
 		dist_2 = 600
@@ -520,7 +523,7 @@ def main():
 	# limit now to 1000 frames for demo purposes and limited masks
 	# end = len(masks)
 	end = 500
-	# masks = masks[0:end]
+	masks = masks[0:end]
 
 	# load a couple of frames
 	frames = []
