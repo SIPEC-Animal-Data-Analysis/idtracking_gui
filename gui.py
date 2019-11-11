@@ -128,7 +128,7 @@ class WindowHandler:
 		self.mask_color_focus = (0, 255, 0)
 		self.mask_color_labeled = (0, 0, 255)
 
-		self.local_slider_window = 5
+		self.local_slider_window = 20
 		self.local_slider_lower_window = self.current_frame - self.local_slider_window
 		self.local_slider_higher_window = self.current_frame + self.local_slider_window
 
@@ -520,7 +520,7 @@ def main():
 	# limit now to 1000 frames for demo purposes and limited masks
 	# end = len(masks)
 	end = 500
-	masks = masks[0:end]
+	# masks = masks[0:end]
 
 	# load a couple of frames
 	frames = []
