@@ -7,6 +7,7 @@ import cv2
 import numpy as np
 from skimage.transform import rescale
 from tqdm import tqdm
+from glob import glob
 
 parser = ArgumentParser()
 
@@ -67,7 +68,7 @@ class WindowHandler:
 	current_frame = None
 
 	def __init__(self,
-				 frames,
+				 frames_path,
 				 name_indicators,
 				 filename,
 				 results_sink,
@@ -78,7 +79,7 @@ class WindowHandler:
 
 		super().__init__()
 		self.masks = masks
-		self.frames = frames
+		self.frames_path = frames_path
 		self.name_indicators = name_indicators
 		self.filename = filename
 		self.results_sink = results_sink
@@ -87,6 +88,8 @@ class WindowHandler:
 		self.stepsize = stepsize
 		self.break_status = False
 		self.num_masks = num_masks
+
+
 
 		# start timer for persistent saving
 		self.start_time = time.time()
@@ -119,20 +122,43 @@ class WindowHandler:
 		self.current_difficulty_flag = 'easy'
 		self.mask_focus = 0
 
+
 		self.mask_color_default_focus_frame = (125, 125, 125)
 		self.mask_color_default = (75, 75, 75)
 		self.mask_color_focus = (0, 255, 0)
 		self.mask_color_labeled = (0, 0, 255)
 
-		self.local_slider_window = 10
+		self.local_slider_window = 5
 		self.local_slider_lower_window = self.current_frame - self.local_slider_window
 		self.local_slider_higher_window = self.current_frame + self.local_slider_window
-		# TODO: fix local slider
+
+		# load frames
+
+		self.frames_length = len(glob(frames_path + '*.npy'))
+		self.frames = []
+		self.frames_mult = 99999
+		self.load_frames(0,
+		                 self.frames_length)
+		# self.load_frames(max(self.local_slider_lower_window * self.frames_mult , 0),
+		#                  min(self.local_slider_higher_window * self.frames_mult, self.frames_length - 1))
+
+		# self.load_frames(max(self.current_frame - 1 , 0),
+		#                  min(self.current_frame + 1, self.frames_length - 1))
+
+
 		self.local_slider = cv2.createTrackbar("Local Slider", self.window_name,
 											   self.local_slider_lower_window,
 											   self.local_slider_higher_window, self.on_change_local)
 		self.global_slider = cv2.createTrackbar("Global Slider", self.window_name,
-												self.current_frame, len(self.frames) - 1, self.on_change_global)
+												self.current_frame, self.frames_length - 1, self.on_change_global)
+
+	def load_frames(self,
+	                start,
+	                end):
+		for i in tqdm(range(start, end)):
+			example_frame = np.load(self.frames_path + 'frame_' + str(i) + '.npy')
+			# self.frames[i] = example_frame
+			self.frames.append(example_frame)
 
 	def on_change_local(self,
 						int):
@@ -147,6 +173,8 @@ class WindowHandler:
 		if not self.local_slider_lower_window < int < self.local_slider_higher_window:
 			self.local_slider_lower_window = int - self.local_slider_window
 			self.local_slider_higher_window = int + self.local_slider_window
+			# self.load_frames(max(self.current_frame - 1, 0),
+			#                  min(self.current_frame + 1, self.frames_length - 1))
 			cv2.setTrackbarMin("Local Slider", winname = self.window_name,
 							minval = self.local_slider_lower_window)
 			cv2.setTrackbarMax("Local Slider", winname = self.window_name,
@@ -248,6 +276,8 @@ class WindowHandler:
 		if not self.local_slider_lower_window < self.current_frame < self.local_slider_higher_window:
 			self.local_slider_lower_window = self.current_frame - self.local_slider_window
 			self.local_slider_higher_window = self.current_frame + self.local_slider_window
+			# self.load_frames(max(self.current_frame - 1, 0),
+			#                  min(self.current_frame + 1, self.frames_length - 1))
 			cv2.setTrackbarMin("Local Slider", winname = self.window_name,
 							minval = self.local_slider_lower_window)
 			cv2.setTrackbarMax("Local Slider", winname = self.window_name,
@@ -265,6 +295,8 @@ class WindowHandler:
 		if not self.local_slider_lower_window < self.current_frame < self.local_slider_higher_window:
 			self.local_slider_lower_window = self.current_frame - self.local_slider_window
 			self.local_slider_higher_window = self.current_frame + self.local_slider_window
+			# self.load_frames(max(self.current_frame - 1, 0),
+			#                  min(self.current_frame + 1, self.frames_length - 1))
 			cv2.setTrackbarMin("Local Slider", winname = self.window_name,
 							minval = self.local_slider_lower_window)
 			cv2.setTrackbarMax("Local Slider", winname = self.window_name,
@@ -493,14 +525,12 @@ def main():
 	# load a couple of frames
 	frames = []
 	print('loading frames')
-	for i in tqdm(range(0, end)):
-		example_frame = np.load(sink + 'frames/' + 'frame_' + str(i) + '.npy')
-		frames.append(example_frame)
+	frames_path = sink + 'frames/'
 
 	stepsize = 1
 
 	# init handler
-	myhandler = WindowHandler(frames,
+	myhandler = WindowHandler(frames_path,
 							  name_indicators,
 							  filename,
 							  results_sink,
