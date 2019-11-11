@@ -254,6 +254,23 @@ class WindowHandler:
 							maxval = self.local_slider_higher_window)
 		cv2.setTrackbarPos("Local Slider", self.window_name, self.current_frame)
 
+	def set_focus(self,
+	              focus_frame):
+		# self.current_mask += 1
+		print(str(focus_frame))
+		self.current_frame = focus_frame
+		# self.current_mask_focus = 0
+
+		cv2.setTrackbarPos("Global Slider", self.window_name, self.current_frame)
+		if not self.local_slider_lower_window < self.current_frame < self.local_slider_higher_window:
+			self.local_slider_lower_window = self.current_frame - self.local_slider_window
+			self.local_slider_higher_window = self.current_frame + self.local_slider_window
+			cv2.setTrackbarMin("Local Slider", winname = self.window_name,
+							minval = self.local_slider_lower_window)
+			cv2.setTrackbarMax("Local Slider", winname = self.window_name,
+							maxval = self.local_slider_higher_window)
+		cv2.setTrackbarPos("Local Slider", self.window_name, self.current_frame)
+
 
 	def display_frame(self):
 		if self.zoom:
@@ -267,8 +284,8 @@ class WindowHandler:
 						int(center_x - 200):int(center_x + 200)]
 
 			# TODO: determine value or find best fixed
-			rescaled_img = rescale(masked_img, 2.5, multichannel=True)
-			cv2.imshow("output", cv2.cvtColor(rescaled_img, cv2.COLOR_BGR2RGB))
+			rescaled_img = rescale(masked_img, 1.75, multichannel=True)
+			cv2.imshow("output", cv2.cvtColor(rescaled_img.astype('float32'), cv2.COLOR_BGR2RGB))
 		else:
 			curr_img = self.frames[self.current_frame]
 			cv2.putText(curr_img, 'Frame: ' + str(self.current_frame), (10, 200),
@@ -285,7 +302,7 @@ class WindowHandler:
 
 
 	def display_all_keys(self):
-
+		#TODO: explain 'b','w','t'
 		##
 		dist_1 = 200
 		cv2.putText(self.frames[self.current_frame], 'p -- display previous mask',
@@ -309,6 +326,34 @@ class WindowHandler:
 					(dist_2, 850 + 75), self.font, 0.5, (255, 255, 255), self.font_thickness, cv2.LINE_AA)
 
 		pass
+
+	def save_mask_result(self,
+	                     result):
+		if self.current_frame == self.current_frame_focus:
+			try:
+				self.results[self.current_frame]['frame']
+			except KeyError:
+				self.results[self.current_frame] = {
+					'frame': self.frames[self.current_frame],
+					'masks': self.masks[self.current_frame],
+					}
+			try:
+				results = self.results[self.current_frame]['results']
+				results[self.current_mask_focus] = result
+			except KeyError:
+				# first result indicates mask_id, second indicates animal id
+				results = {self.current_mask_focus: result}
+				self.results[self.current_frame]['results'] = results
+			# change to next random frame if all masks labeled
+			if self.current_mask_focus == len(self.masks[self.current_frame_focus]['rois']) - 1:
+				print('setting new focus')
+				self.set_new_random_focus()
+				self.previous_frame_focus = 0
+				self.current_difficulty_flag = 'easy'
+			# otherwise next mask
+			else:
+				self.current_mask_focus += 1
+				self.current_difficulty_flag = 'easy'
 
 
 	def display_current_frame(self):
@@ -356,8 +401,8 @@ class WindowHandler:
 			else:
 				self.previous_frame_focus += 0
 		# back to current focus
-		if frameclick == ord('b') and self.previous_frame_focus:
-			self.current_frame = self.current_frame_focus
+		if frameclick == ord('b'):
+			self.set_focus(self.current_frame_focus)
 		# zoom in
 		if frameclick == ord('='):
 			self.zoom = True
@@ -383,37 +428,16 @@ class WindowHandler:
 				self.current_frame = self.current_frame_focus
 		# skipping a mask
 		# TODO: fix what is results
-		if frameclick == ord('d'):
-			self.results.append([self.frames[idx], self.masks[idx], 'd'])
-			_idx += 1
+		if frameclick == ord('w'):
+			self.save_mask_result('wrong_mask')
+		if frameclick == ord('t'):
+			self.save_mask_result('too_difficult')
 		# labeling one of the primates
 		for j in range(1, len(self.name_indicators)+1):
 			if frameclick == ord(str(j)):
 				# TODO: multiple results are in same FOV
-				try:
-					self.results[self.current_frame]['frame']
-				except KeyError:
-					self.results[self.current_frame] = {
-						'frame': self.frames[self.current_frame],
-						'masks': self.masks[self.current_frame],
-						}
-				try:
-					results = self.results[self.current_frame]['results']
-					results[self.current_mask_focus] = self.name_indicators[j - 1]
-				except KeyError:
-					# first result indicates mask_id, second indicates animal id
-					results = {self.current_mask_focus: self.name_indicators[j - 1]}
-					self.results[self.current_frame]['results'] = results
-				# change to next random frame if all masks labeled
-				if self.current_mask_focus == len(self.masks[self.current_frame_focus]['rois']) - 1:
-					print('setting new focus')
-					self.set_new_random_focus()
-					self.previous_frame_focus = 0
-					self.current_difficulty_flag = 'easy'
-				# otherwise next mask
-				else:
-					self.current_mask_focus += 1
-					self.current_difficulty_flag = 'easy'
+				self.save_mask_result(self.name_indicators[j - 1])
+
 
 	def check_num_results(self):
 		if len(self.results) == self.num_masks:
@@ -430,7 +454,12 @@ class WindowHandler:
 		self.check_num_results()
 		return self.break_status
 
-
+Videos = {
+	'video1' : '20180115T150502-20180115T150902_%T1',
+	'video2' : '',
+	'video3' : '',
+	'video4' : '',
+	}
 
 def main():
 	# parse arguments
@@ -441,27 +470,31 @@ def main():
 	for idx, el in enumerate(names):
 		name_indicators[idx] = el
 
+	base_path = '/Users/marksm/Desktop/cpFromBob/idtracking_gui/'
 	filename = args.filename
-	sink = './example_data/frames/' + filename + '_segmented/'
+	filename = Videos[filename]
+	sink = base_path + filename + '/'
 	results_sink = args.results_sink
 	num_masks = args.num_masks
 	window_size = args.window_size
 
 	print('loading masks')
-	masks = np.load('./example_data/masks/' + filename + '_SegResults.npy', allow_pickle=True)
+	masks = np.load(base_path + filename + '/SegResults.npy', allow_pickle=True)
 
 	# create results folder if non-existing
 	if not os.path.exists(results_sink):
 		os.makedirs(results_sink)
 
 	# limit now to 1000 frames for demo purposes and limited masks
-	masks = masks[2000:2500]
+	# end = len(masks)
+	end = 500
+	masks = masks[0:end]
 
 	# load a couple of frames
 	frames = []
 	print('loading frames')
-	for i in tqdm(range(2000, 2500)):
-		example_frame = np.load(sink + filename + '_frame_' + str(i) + '.npy')
+	for i in tqdm(range(0, end)):
+		example_frame = np.load(sink + 'frames/' + 'frame_' + str(i) + '.npy')
 		frames.append(example_frame)
 
 	stepsize = 1
