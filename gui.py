@@ -127,13 +127,18 @@ class WindowHandler:
 
         # load frames
 
-        self.frames_length = len(glob(frames_path + '*.npy'))
+        self.overall_frames = len(glob(frames_path + '*.npy'))
+        self.frame_buffer = 1000
+        self.frame_batches = int(float(self.overall_frames)/float(self.frame_buffer))
+        self.frame_current_batch = 0
+        # int((self.frame_current_batch - 1) * self.frame_buffer)
+        self.frames_start = 0
+        self.frames_length = int( (self.frame_current_batch+1) * self.frame_buffer)
         self.frames = []
         self.frames_mult = 99999
         print('loading frames')
-        self.load_frames(0,
-                         self.frames_length)
-        # 500)
+        self.load_frames(0, self.frames_length)
+                        # 500)
         # self.load_frames(max(self.local_slider_lower_window * self.frames_mult , 0),
         #                  min(self.local_slider_higher_window * self.frames_mult, self.frames_length - 1))
 
@@ -144,7 +149,7 @@ class WindowHandler:
                                                self.local_slider_lower_window,
                                                self.local_slider_higher_window, self.on_change_local)
         self.global_slider = cv2.createTrackbar("Global Slider", self.window_name,
-                                                self.current_frame, self.frames_length - 1, self.on_change_global)
+                                                self.current_frame, self.overall_frames - 1, self.on_change_global)
 
     def load_frames(self,
                     start,
@@ -264,6 +269,16 @@ class WindowHandler:
         return draw
 
     def adjust_trackbar(self):
+
+        # check whether current frame outside focus
+        if not self.frame_current_batch == self.check_batchnum(self.current_frame):
+            print('reloading frames')
+            self.frame_current_batch = self.check_batchnum(self.current_frame)
+            self.load_frames(self.frame_buffer * self.frame_current_batch, self.frame_buffer *
+                             (self.frame_current_batch + 1))
+
+        self.current_mask_focus = 0
+
         cv2.setTrackbarPos("Global Slider", self.window_name, self.current_frame)
         if not self.local_slider_lower_window < self.current_frame < self.local_slider_higher_window:
             self.local_slider_lower_window = self.current_frame - self.local_slider_window
@@ -276,12 +291,19 @@ class WindowHandler:
                                maxval=self.local_slider_higher_window)
         cv2.setTrackbarPos("Local Slider", self.window_name, self.current_frame)
 
+    def check_batchnum(self,
+                       frame):
+
+        for i in range(0,self.frame_batches):
+            if int(self.frame_buffer * i) < frame < int(self.frame_buffer * (i+1)):
+                return i
+        return -1
+
     def set_new_regular_focus(self,
                               interval=500):
         self.current_mask += 1
         self.current_frame_focus = self.current_frame_focus + 200
         self.current_frame = self.current_frame_focus
-        self.current_mask_focus = 0
 
         self.adjust_trackbar()
 
@@ -519,6 +541,7 @@ videos_mice = {
     'video6': 'Animal1234 Day1',
     }
 
+import gc
 
 def main():
     # parse arguments
@@ -551,8 +574,15 @@ def main():
         # highres inference v2
         sink = base_path + 'primate/inference/segmentation_highres/' + filename + '/'
         import pickle
+        import time
+        import joblib
+        # gc.disable()
+        start = time.time()
         with open(base_path + 'primate/inference/segmentation_highres/' + filename + '/SegResults.pkl', 'rb') as handle:
             masks = pickle.load(handle)
+            # masks = joblib.load(handle, mmap_mode="r")
+        print('loading mask took', time.time() - start)
+        # gc.enable()
 
     elif species == 'mouse':
         filename = videos_mice[filename]
