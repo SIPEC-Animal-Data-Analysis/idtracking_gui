@@ -1,4 +1,5 @@
 import sys
+from joblib import Parallel, delayed
 
 sys.path.extend(['./venv/lib/python3.7/site-packages'])
 import os
@@ -9,8 +10,17 @@ from time import sleep
 import cv2
 import numpy as np
 from skimage.transform import rescale
+import skvideo.io
 from tqdm import tqdm
 from glob import glob
+
+import skimage.color
+import skimage.io
+import skimage.transform
+
+from distutils.version import LooseVersion
+
+import pickle
 
 crop = True
 # highres is 500
@@ -35,7 +45,7 @@ parser.add_argument('--out_folder',
                     action='store',
                     dest='results_sink',
                     type=str,
-                    default='./results/testing/',
+                    default='./results/',
                     help='folder where results should be saved')
 
 parser.add_argument('--num_masks',
@@ -57,6 +67,117 @@ parser.add_argument('--species',
                     dest='species',
                     type=str,
                     help='define the species to annotate primate/mouse')
+
+
+
+def resize(image, output_shape, order=1, mode='constant', cval=0, clip=True,
+           preserve_range=False, anti_aliasing=False, anti_aliasing_sigma=None):
+    """A wrapper for Scikit-Image resize().
+
+    Scikit-Image generates warnings on every call to resize() if it doesn't
+    receive the right parameters. The right parameters depend on the version
+    of skimage. This solves the problem by using different parameters per
+    version. And it provides a central place to control resizing defaults.
+    """
+    if LooseVersion(skimage.__version__) >= LooseVersion("0.14"):
+        # New in 0.14: anti_aliasing. Default it to False for backward
+        # compatibility with skimage 0.13.
+        return skimage.transform.resize(
+            image, output_shape,
+            order=order, mode=mode, cval=cval, clip=clip,
+            preserve_range=preserve_range, anti_aliasing=anti_aliasing,
+            anti_aliasing_sigma=anti_aliasing_sigma)
+    else:
+        return skimage.transform.resize(
+            image, output_shape,
+            order=order, mode=mode, cval=cval, clip=clip,
+            preserve_range=preserve_range)
+
+
+def resize_image(image, min_dim=None, max_dim=None, min_scale=None, mode="square"):
+    # Keep track of image dtype and return results in the same dtype
+    image_dtype = image.dtype
+    # Default window (y1, x1, y2, x2) and default scale == 1.
+    h, w = image.shape[:2]
+    window = (0, 0, h, w)
+    scale = 1
+    padding = [(0, 0), (0, 0), (0, 0)]
+    crop = None
+
+    if mode == "none":
+        return image, window, scale, padding, crop
+
+    # Scale?
+    if min_dim:
+        # Scale up but not down
+        scale = max(1, min_dim / min(h, w))
+    if min_scale and scale < min_scale:
+        scale = min_scale
+
+    # Does it exceed max dim?
+    if max_dim and mode == "square":
+        image_max = max(h, w)
+        if round(image_max * scale) > max_dim:
+            scale = max_dim / image_max
+
+    # Resize image using bilinear interpolation
+    if scale != 1:
+        image = resize(image, (round(h * scale), round(w * scale)),
+                       preserve_range=True)
+
+    # Need padding or cropping?
+    if mode == "square":
+        # Get new height and width
+        h, w = image.shape[:2]
+        top_pad = (max_dim - h) // 2
+        bottom_pad = max_dim - h - top_pad
+        left_pad = (max_dim - w) // 2
+        right_pad = max_dim - w - left_pad
+        padding = [(top_pad, bottom_pad), (left_pad, right_pad), (0, 0)]
+        image = np.pad(image, padding, mode='constant', constant_values=0)
+        window = (top_pad, left_pad, h + top_pad, w + left_pad)
+    elif mode == "pad64":
+        h, w = image.shape[:2]
+        # Both sides must be divisible by 64
+        assert min_dim % 64 == 0, "Minimum dimension must be a multiple of 64"
+        # Height
+        if h % 64 > 0:
+            max_h = h - (h % 64) + 64
+            top_pad = (max_h - h) // 2
+            bottom_pad = max_h - h - top_pad
+        else:
+            top_pad = bottom_pad = 0
+        # Width
+        if w % 64 > 0:
+            max_w = w - (w % 64) + 64
+            left_pad = (max_w - w) // 2
+            right_pad = max_w - w - left_pad
+        else:
+            left_pad = right_pad = 0
+        padding = [(top_pad, bottom_pad), (left_pad, right_pad), (0, 0)]
+        image = np.pad(image, padding, mode='constant', constant_values=0)
+        window = (top_pad, left_pad, h + top_pad, w + left_pad)
+    elif mode == "crop":
+        # Pick a random crop
+        h, w = image.shape[:2]
+        y = random.randint(0, (h - min_dim))
+        x = random.randint(0, (w - min_dim))
+        crop = (y, x, min_dim, min_dim)
+        image = image[y:y + min_dim, x:x + min_dim]
+        window = (0, 0, min_dim, min_dim)
+    else:
+        raise Exception("Mode {} not supported".format(mode))
+    return image.astype(image_dtype), window, scale, padding, crop
+
+
+def mold_image(img):
+    image, window, scale, padding, crop = resize_image(
+        img[:, :, :],
+        min_dim=2048,
+        min_scale=2048,
+        max_dim=2048,
+        mode="square")
+    return image
 
 
 class WindowHandler:
@@ -125,25 +246,24 @@ class WindowHandler:
         self.local_slider_lower_window = self.current_frame - self.local_slider_window
         self.local_slider_higher_window = self.current_frame + self.local_slider_window
 
-        # load frames
+        # load frames --- old frames
 
-        self.overall_frames = len(glob(frames_path + '*.npy'))
-        self.frame_buffer = 1000
-        self.frame_batches = int(float(self.overall_frames)/float(self.frame_buffer))
-        self.frame_current_batch = 0
-        # int((self.frame_current_batch - 1) * self.frame_buffer)
-        self.frames_start = 0
-        self.frames_length = int( (self.frame_current_batch+1) * self.frame_buffer)
-        self.frames = []
-        self.frames_mult = 99999
-        print('loading frames')
-        self.load_frames(0, self.frames_length)
-                        # 500)
-        # self.load_frames(max(self.local_slider_lower_window * self.frames_mult , 0),
-        #                  min(self.local_slider_higher_window * self.frames_mult, self.frames_length - 1))
-
-        # self.load_frames(max(self.current_frame - 1 , 0),
-        #                  min(self.current_frame + 1, self.frames_length - 1))
+        #self.overall_frames = len(glob(frames_path + '*.npy'))
+        #self.frame_buffer = min(10000,self.overall_frames)
+        #self.frame_batches = int(float(self.overall_frames)/float(self.frame_buffer))
+        #self.frame_current_batch = 0
+        
+        ## int((self.frame_current_batch - 1) * self.frame_buffer)
+        #self.frames_start = 0
+        #self.frames_length = int( (self.frame_current_batch+1) * self.frame_buffer)
+        #self.frames = []
+        #self.frames_mult = 99999
+        #print('loading frames')
+        #self.load_frames(0, self.frames_length)
+        
+        # --- old frames end
+        self.load_frames(0, 0)
+        self.overall_frames = len(self.frames)
 
         self.local_slider = cv2.createTrackbar("Local Slider", self.window_name,
                                                self.local_slider_lower_window,
@@ -154,10 +274,28 @@ class WindowHandler:
     def load_frames(self,
                     start,
                     end):
-        for i in tqdm(range(start, end)):
-            example_frame = np.load(self.frames_path + 'frame_' + str(i) + '.npy')
-            # self.frames[i] = example_frame
-            self.frames.append(example_frame)
+        print('loading frames')        
+        # frames as npy version
+#        for i in tqdm(range(start, end)):
+#            example_frame = np.load(self.frames_path + 'frame_' + str(i) + '.npy')
+#            # self.frames[i] = example_frame
+#            self.frames.append(example_frame)
+
+
+        #TODO: remove hardcoding
+        segment = int(self.filename.split('_')[-1][-1])
+        vidname = self.filename.split('_1')[0]
+        basepath = '/media/nexus/storage1/swissknife_data/primate/raw_videos/2018_2/'
+        vid = basepath + vidname + '.mp4'
+        # frames from mp4
+        videodata = skvideo.io.vread(vid, as_grey=False)
+        videodata = videodata[(segment-1) * 10000:segment * 10000]
+        results = Parallel(n_jobs=40,
+            max_nbytes=None,
+            backend='multiprocessing',
+            verbose=40)(delayed(mold_image)(image) for image in videodata)
+        self.frames = videodata
+
 
     def on_change_local(self,
                         int):
@@ -304,7 +442,20 @@ class WindowHandler:
         self.current_mask += 1
         self.current_frame_focus = self.current_frame_focus + 200
         self.current_frame = self.current_frame_focus
+        
+        #TODO: nicer
+        breakval = True
+        while(breakval):
+            try:
+                self.masks[self.current_frame]['rois'][0]
+                breakval = False
+            except IndexError:
+                self.current_frame_focus = self.current_frame_focus + 200
+                self.current_frame = self.current_frame_focus
 
+        if self.current_frame > 9500:
+            self.break_state = True
+        
         self.adjust_trackbar()
 
     def set_new_random_focus(self):
@@ -419,7 +570,10 @@ class WindowHandler:
                                   mask)
         except IndexError:
             pass
-        self.display_frame()
+        try:
+            self.display_frame()
+        except IndexError:
+            self.break_status = True
 
         return
 
@@ -516,21 +670,47 @@ class WindowHandler:
         return
 
     def update(self):
-        self.display_current_frame()
-        # self.display_all_indicators()
-        # self.display_all_keys()
-        self.check_keys()
-        self.clocked_save()
-        self.check_num_results()
+        try:
+            self.display_current_frame()
+            # self.display_all_indicators()
+            # self.display_all_keys()
+            self.check_keys()
+            self.clocked_save()
+            self.check_num_results()
+        except (FileNotFoundError, IndexError):
+            self.break_status = True
         return self.break_status
 
 
-videos_primate = {
-    'video1': '20180115T150502-20180115T150902_%T1',
-    'video2': '20180124T115800-20180124T122800b_%T1',
-    'video3': '20180131T135402-20180131T142501_%T1',
-    'video4': '20180202T140159-20180202T143159_%T1',
-    }
+# videos_primate = {
+#     'video1': '20180115T150502-20180115T150902_%T1',
+#     'video2': '20180124T115800-20180124T122800b_%T1',
+#     'video3': '20180131T135402-20180131T142501_%T1',
+#     'video4': '20180202T140159-20180202T143159_%T1',
+#     }
+
+videos_primate = [
+    #'20180131T135402-20180131T142501_%T1_1',
+    #'20180131T135402-20180131T142501_%T1_2',
+    #'20180124T115800-20180124T122800b_%T1_3',
+    #'20180124T115800-20180124T122800b_%T1_4',
+    #'20180202T140159-20180202T143159_%T1_1',
+    #'20180202T140159-20180202T143159_%T1_2',
+    #'20180131T135402-20180131T142501_%T1_3',
+    #'20180131T135402-20180131T142501_%T1_4',
+    #'20180124T115800-20180124T122800b_%T1_1',
+    #'20180124T115800-20180124T122800b_%T1_2',
+    #'20180202T140159-20180202T143159_%T1_3',
+    #'20180202T140159-20180202T143159_%T1_4',
+    '20180115T150502-20180115T150902_%T1_1',
+    # '20180115T150502-20180115T150902_%T1_2',
+    # '20180115T150502-20180115T150902_%T1_3',
+    # '20180115T150502-20180115T150902_%T1_4',
+]
+
+videos_primate = [
+    '20180126T145419-20180126T145619_%T1_1',
+]
 
 videos_mice = {
     'video1': 'Animal1234 Day1',
@@ -542,90 +722,114 @@ videos_mice = {
     }
 
 import gc
+import joblib
+import time
+from multiprocessing import Process
+import concurrent.futures
+
+def load_mask(video_path):
+    gc.disable()
+    with open(video_path + 'SegResults.pkl', 'rb') as handle:
+        masks = pickle.load(handle)
+        # masks = joblib.load(handle, mmap_mode="r")
+    gc.enable()
+    return masks
+
+def load_mask_parallel(video_path):
+    gc.disable()
+    with open(video_path + 'SegResults.pkl', 'rb') as handle:
+        masks = pickle.load(handle)
+        # masks = joblib.load(handle, mmap_mode="r")
+    gc.enable()
+    return masks
 
 def main():
-    # parse arguments
+# parse arguments
     args = parser.parse_args()
     species = args.species
     names = args.names
     results_sink = args.results_sink
-    num_masks = args.num_masks
+    num_masks = 100
     window_size = args.window_size
     names = names.split(',')
     name_indicators = {}
     for idx, el in enumerate(names):
         name_indicators[idx] = el
 
-    base_path = '/media/nexus/storage1/swissknife_data/'
-    # base_path = '/media/nexus/storage1/primate_data/preprocessed/segmented_highres/'
-    filename = args.filename
-
-    sink = ''
-    print('loading masks')
-    if species == 'primate':
-        filename = videos_primate[filename]
-        # sink = base_path + 'primate/inference/segmentation/' + filename + '/'
-        # masks = np.load(base_path + 'primate/inference/segmentation/' + filename + '/SegResults.npy', allow_pickle=True)
-
-        # highres inference v1
-        # sink = base_path + filename + '/'
-        # masks = np.load(base_path + filename + '/SegResults.npy', allow_pickle=True)
-
-        # highres inference v2
-        sink = base_path + 'primate/inference/segmentation_highres/' + filename + '/'
-        import pickle
-        import time
-        import joblib
-        # gc.disable()
-        start = time.time()
-        with open(base_path + 'primate/inference/segmentation_highres/' + filename + '/SegResults.pkl', 'rb') as handle:
-            masks = pickle.load(handle)
-            # masks = joblib.load(handle, mmap_mode="r")
-        print('loading mask took', time.time() - start)
-        # gc.enable()
-
-    elif species == 'mouse':
-        filename = videos_mice[filename]
-        sink = base_path + 'mouse/inference/segmentation/identification/4plex_data/' + filename + '/'
-        masks = np.load(
-            base_path + 'mouse/inference/segmentation/identification/4plex_data/' + filename + '/SegResults.npy',
-            allow_pickle=True)
-    else:
-        raise NotImplementedError
-
-    # create results folder if non-existing
+    base_path = '/media/nexus/storage1/swissknife_data/primate/inference/segmentation_highres_multi/'
+    base_path = '/media/nexus/storage1/swissknife_data/primate/inference/segmentation_new/2018_2/'
     if not os.path.exists(results_sink):
         os.makedirs(results_sink)
 
-    # limit now to 1000 frames for demo purposes and limited masks
-    # end = len(masks)
-    # end = 500
-    # masks = masks[0:end]
+    future = None
+    executor = None
+    myhandler = None
 
-    # load a couple of frames
-    frames = []
-    print('loading frames')
-    frames_path = sink + 'frames/'
+    for video_id, filename in enumerate(videos_primate):
 
-    stepsize = 1
+        if myhandler:
+            del myhandler
+        # check num masks
+        start = time.time()
+        video_path = base_path + filename + '/'
 
-    # init handler
-    myhandler = WindowHandler(frames_path,
-                              name_indicators,
-                              filename,
-                              results_sink,
-                              masks,
-                              num_masks,
-                              stepsize,
-                              window_size)
+        if executor:
+            preload_masks = future.result()
+            masks = preload_masks
+            executor.shutdown(wait=False)
+        else:
+            masks = load_mask(video_path)
+        print('loading mask took', time.time() - start)
+        # if video complete go to next video
+        # res = np.load(results_sink + video + '.npy')
+        # if not len(res) < num_masks:
+        #     continue
 
-    while (True):
-        break_status = myhandler.update()
-        if break_status:
-            myhandler.save_data()
-            break
-        sleep(0.05)
+        frames_path = video_path + 'frames/'
+        stepsize = 100
 
+        print('initiating handler')
+        # init handler
+        myhandler = WindowHandler(frames_path,
+                                  name_indicators,
+                                  filename,
+                                  results_sink,
+                                  masks,
+                                  num_masks,
+                                  stepsize,
+                                  window_size)
+
+
+
+        # p1 = Process(target=load_mask, args=('hello',))
+        # p1.start()
+        # try:
+        #     print('preloading masks')
+        #     #ThreadPoolExecutor
+        #     with concurrent.futures.ProcessPoolExecutor(max_workers=10) as executor:
+        #         future = executor.submit(load_mask, base_path + videos_primate[idx+1] + '/')
+        # except IndexError:
+        #     pass
+
+        # try:
+        #     executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
+        #     future = executor.submit(load_mask, base_path + videos_primate[video_id + 1] + '/')
+        # except IndexError:
+        #     pass
+
+        breaking = True
+        while breaking:
+            break_status = myhandler.update()
+            if break_status:
+                print('saving data, dont interrupt')
+                myhandler.save_data()
+                print('data saved, good to interrupt')
+                cv2.destroyAllWindows()
+                breaking=False
+                break
+            sleep(0.05)
+
+        return
 
 if __name__ == '__main__':
     main()
