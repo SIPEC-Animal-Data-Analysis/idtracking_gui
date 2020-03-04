@@ -246,12 +246,17 @@ class WindowHandler:
         self.local_slider_lower_window = self.current_frame - self.local_slider_window
         self.local_slider_higher_window = self.current_frame + self.local_slider_window
 
+        # self.regular_focus_interval = 200
+        self.regular_focus_interval = 10
+
         # load frames --- old frames
 
         #self.overall_frames = len(glob(frames_path + '*.npy'))
-        #self.frame_buffer = min(10000,self.overall_frames)
-        #self.frame_batches = int(float(self.overall_frames)/float(self.frame_buffer))
-        #self.frame_current_batch = 0
+        self.load_frames(0, 0)
+        self.overall_frames = len(self.frames)
+        self.frame_buffer = min(10000,self.overall_frames)
+        self.frame_batches = int(float(self.overall_frames)/float(self.frame_buffer))
+        self.frame_current_batch = 0
         
         ## int((self.frame_current_batch - 1) * self.frame_buffer)
         #self.frames_start = 0
@@ -262,8 +267,7 @@ class WindowHandler:
         #self.load_frames(0, self.frames_length)
         
         # --- old frames end
-        self.load_frames(0, 0)
-        self.overall_frames = len(self.frames)
+
 
         self.local_slider = cv2.createTrackbar("Local Slider", self.window_name,
                                                self.local_slider_lower_window,
@@ -285,16 +289,21 @@ class WindowHandler:
         #TODO: remove hardcoding
         segment = int(self.filename.split('_')[-1][-1])
         vidname = self.filename.split('_1')[0]
-        basepath = '/media/nexus/storage1/swissknife_data/primate/raw_videos/2018_2/'
+        # basepath = '/media/nexus/storage1/swissknife_data/primate/raw_videos/2018_2/'
+        basepath = '/Users/marksm/swissknife_data/primate/raw_videos/'
         vid = basepath + vidname + '.mp4'
         # frames from mp4
+        # videodata = skvideo.io.vread(vid, as_grey=False, num_frames=100)
+        # videodata = videodata[0:100]
         videodata = skvideo.io.vread(vid, as_grey=False)
-        videodata = videodata[(segment-1) * 10000:segment * 10000]
-        results = Parallel(n_jobs=40,
+        results_list = Parallel(n_jobs=40,
             max_nbytes=None,
             backend='multiprocessing',
             verbose=40)(delayed(mold_image)(image) for image in videodata)
-        self.frames = videodata
+        results = {}
+        for idx, el in enumerate(results_list):
+            results[idx] = el
+        self.frames = results
 
 
     def on_change_local(self,
@@ -440,7 +449,7 @@ class WindowHandler:
     def set_new_regular_focus(self,
                               interval=500):
         self.current_mask += 1
-        self.current_frame_focus = self.current_frame_focus + 200
+        self.current_frame_focus = self.current_frame_focus + self.regular_focus_interval
         self.current_frame = self.current_frame_focus
         
         #TODO: nicer
@@ -450,13 +459,13 @@ class WindowHandler:
                 self.masks[self.current_frame]['rois'][0]
                 breakval = False
             except IndexError:
-                self.current_frame_focus = self.current_frame_focus + 200
+                self.current_frame_focus = self.current_frame_focus + self.regular_focus_interval
                 self.current_frame = self.current_frame_focus
 
-        if self.current_frame > 9500:
-            self.break_state = True
-        
-        self.adjust_trackbar()
+        if self.current_frame > self.overall_frames - 50:
+            self.break_status = True
+        else:
+            self.adjust_trackbar()
 
     def set_new_random_focus(self):
         self.current_mask += 1
@@ -710,6 +719,8 @@ videos_primate = [
 
 videos_primate = [
     '20180126T145419-20180126T145619_%T1_1',
+    '20180126T145419-20180126T145619_%T1_1',
+    '20180126T145419-20180126T145619_%T1_1',
 ]
 
 videos_mice = {
@@ -729,7 +740,8 @@ import concurrent.futures
 
 def load_mask(video_path):
     gc.disable()
-    with open(video_path + 'SegResults.pkl', 'rb') as handle:
+    with open('/Users/marksm/swissknife_data/primate/inference/segmentation/20180126T145419-20180126T145619_%T1_1/SegResults.pkl', 'rb') as handle:
+    # with open(video_path + 'SegResults.pkl', 'rb') as handle:
         masks = pickle.load(handle)
         # masks = joblib.load(handle, mmap_mode="r")
     gc.enable()
@@ -757,7 +769,8 @@ def main():
         name_indicators[idx] = el
 
     base_path = '/media/nexus/storage1/swissknife_data/primate/inference/segmentation_highres_multi/'
-    base_path = '/media/nexus/storage1/swissknife_data/primate/inference/segmentation_new/2018_2/'
+    # base_path = '/media/nexus/storage1/swissknife_data/primate/inference/segmentation_new/2018_2/'
+    base_path = '/Users/marksm/swissknife_data/primate/inference/segmentation/'
     if not os.path.exists(results_sink):
         os.makedirs(results_sink)
 
@@ -766,6 +779,8 @@ def main():
     myhandler = None
 
     for video_id, filename in enumerate(videos_primate):
+
+        print('LOADING NEXT VIDEO')
 
         if myhandler:
             del myhandler
@@ -828,8 +843,6 @@ def main():
                 breaking=False
                 break
             sleep(0.05)
-
-        return
 
 if __name__ == '__main__':
     main()
