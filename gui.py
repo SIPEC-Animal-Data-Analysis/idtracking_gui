@@ -246,8 +246,7 @@ class WindowHandler:
         self.local_slider_lower_window = self.current_frame - self.local_slider_window
         self.local_slider_higher_window = self.current_frame + self.local_slider_window
 
-        # self.regular_focus_interval = 200
-        self.regular_focus_interval = 10
+        self.regular_focus_interval = 100
 
         # load frames --- old frames
 
@@ -288,14 +287,17 @@ class WindowHandler:
 
         #TODO: remove hardcoding
         segment = int(self.filename.split('_')[-1][-1])
-        vidname = self.filename.split('_1')[0]
-        # basepath = '/media/nexus/storage1/swissknife_data/primate/raw_videos/2018_2/'
-        basepath = '/Users/marksm/swissknife_data/primate/raw_videos/'
+        vidname = self.filename.split('1_')[0] + '1'
+        basepath = '/media/nexus/storage1/swissknife_data/primate/raw_videos/2018_2/'
+        # basepath = '/Users/marksm/swissknife_data/primate/raw_videos/'
         vid = basepath + vidname + '.mp4'
+        idx = int(self.filename.split('1_')[-1])
+        batch_size = 10000
         # frames from mp4
         # videodata = skvideo.io.vread(vid, as_grey=False, num_frames=100)
         # videodata = videodata[0:100]
         videodata = skvideo.io.vread(vid, as_grey=False)
+        videodata = videodata[idx * batch_size:(idx + 1) * batch_size]
         results_list = Parallel(n_jobs=40,
             max_nbytes=None,
             backend='multiprocessing',
@@ -711,16 +713,33 @@ videos_primate = [
     #'20180124T115800-20180124T122800b_%T1_2',
     #'20180202T140159-20180202T143159_%T1_3',
     #'20180202T140159-20180202T143159_%T1_4',
-    '20180115T150502-20180115T150902_%T1_1',
+    #'20180115T150502-20180115T150902_%T1_1',
     # '20180115T150502-20180115T150902_%T1_2',
     # '20180115T150502-20180115T150902_%T1_3',
     # '20180115T150502-20180115T150902_%T1_4',
 ]
 
 videos_primate = [
-    '20180126T145419-20180126T145619_%T1_1',
-    '20180126T145419-20180126T145619_%T1_1',
-    '20180126T145419-20180126T145619_%T1_1',
+    #'20180126T145419-20180126T145619_%T1_1',#nochmal
+    #'20180115T150759-20180115T151259_%T1_1',
+    #'20180116T135000-20180116T142000_%T1_1',
+    '20180116T135000-20180116T142000_%T1_2',
+    '20180116T135000-20180116T142000_%T1_3',
+    '20180116T135000-20180116T142000_%T1_4',
+    '20180116T135000-20180116T142000_%T1_5',
+    '20180123T113000-20180123T130000_%T1_1_1',
+    '20180123T113000-20180123T130000_%T1_1_2',
+    '20180123T113000-20180123T130000_%T1_1_3',
+    '20180124T113800-20180124T115800_%T1_1',
+    '20180124T113800-20180124T115800_%T1_2',
+    '20180124T113800-20180124T115800_%T1_3',
+    '20180124T095000-20180124T103000_%T1_1',
+    '20180124T095000-20180124T103000_%T1_2',
+    '20180124T095000-20180124T103000_%T1_3',
+    '20180124T095000-20180124T103000_%T1_4',
+    '20180124T095000-20180124T103000_%T1_5',
+    '20180124T095000-20180124T103000_%T1_6',
+    '20180124T095000-20180124T103000_%T1_7',
 ]
 
 videos_mice = {
@@ -740,8 +759,8 @@ import concurrent.futures
 
 def load_mask(video_path):
     gc.disable()
-    with open('/Users/marksm/swissknife_data/primate/inference/segmentation/20180126T145419-20180126T145619_%T1_1/SegResults.pkl', 'rb') as handle:
-    # with open(video_path + 'SegResults.pkl', 'rb') as handle:
+    #with open('/Users/marksm/swissknife_data/primate/inference/segmentation/20180126T145419-20180126T145619_%T1_1/SegResults.pkl', 'rb') as handle:
+    with open(video_path + 'SegResults.pkl', 'rb') as handle:
         masks = pickle.load(handle)
         # masks = joblib.load(handle, mmap_mode="r")
     gc.enable()
@@ -768,9 +787,9 @@ def main():
     for idx, el in enumerate(names):
         name_indicators[idx] = el
 
-    base_path = '/media/nexus/storage1/swissknife_data/primate/inference/segmentation_highres_multi/'
-    # base_path = '/media/nexus/storage1/swissknife_data/primate/inference/segmentation_new/2018_2/'
-    base_path = '/Users/marksm/swissknife_data/primate/inference/segmentation/'
+    # base_path = '/media/nexus/storage1/swissknife_data/primate/inference/segmentation_highres_multi/'
+    base_path = '/media/nexus/storage1/swissknife_data/primate/inference/segmentation_new/2018_2/'
+    # base_path = '/Users/marksm/swissknife_data/primate/inference/segmentation/'
     if not os.path.exists(results_sink):
         os.makedirs(results_sink)
 
@@ -795,6 +814,9 @@ def main():
         else:
             masks = load_mask(video_path)
         print('loading mask took', time.time() - start)
+        idx = int(filename.split('1_')[-1])
+        batch_size = 10000
+        masks = masks[idx * batch_size:(idx + 1) * batch_size]
         # if video complete go to next video
         # res = np.load(results_sink + video + '.npy')
         # if not len(res) < num_masks:
