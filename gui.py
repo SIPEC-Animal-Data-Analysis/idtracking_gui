@@ -254,7 +254,7 @@ class WindowHandler:
         self.load_frames(0, 0)
         self.overall_frames = len(self.frames)
         self.frame_buffer = min(10000,self.overall_frames)
-        self.frame_batches = int(float(self.overall_frames)/float(self.frame_buffer))
+        #self.frame_batches = int(float(self.overall_frames)/float(self.frame_buffer))
         self.frame_current_batch = 0
         
         ## int((self.frame_current_batch - 1) * self.frame_buffer)
@@ -288,8 +288,8 @@ class WindowHandler:
         #TODO: remove hardcoding
         segment = int(self.filename.split('_')[-1][-1])
         vidname = self.filename.split('1_')[0] + '1'
-        basepath = '/media/nexus/storage1/swissknife_data/primate/raw_videos/2018_2/'
-        # basepath = '/Users/marksm/swissknife_data/primate/raw_videos/'
+        # basepath = '/media/nexus/storage1/swissknife_data/primate/raw_videos/2018_2/'
+        basepath = '/Users/marksm/swissknife_data/primate/raw_videos/'
         vid = basepath + vidname + '.mp4'
         idx = int(self.filename.split('1_')[-1])
         batch_size = 10000
@@ -306,7 +306,7 @@ class WindowHandler:
         for idx, el in enumerate(results_list):
             results[idx] = el
         self.frames = results
-
+        print('frames loaded', str(len(results)))
 
     def on_change_local(self,
                         int):
@@ -742,6 +742,12 @@ videos_primate = [
     '20180124T095000-20180124T103000_%T1_7',
 ]
 
+videos_primate = [
+    '20180126T145419-20180126T145619_%T1_1',
+    '20180126T145419-20180126T145619_%T1_1',
+    '20180126T145419-20180126T145619_%T1_1',
+    ]
+
 videos_mice = {
     'video1': 'Animal1234 Day1',
     'video2': 'Animal5678 Day1',
@@ -759,8 +765,8 @@ import concurrent.futures
 
 def load_mask(video_path):
     gc.disable()
-    #with open('/Users/marksm/swissknife_data/primate/inference/segmentation/20180126T145419-20180126T145619_%T1_1/SegResults.pkl', 'rb') as handle:
-    with open(video_path + 'SegResults.pkl', 'rb') as handle:
+    with open('/Users/marksm/swissknife_data/primate/inference/segmentation/20180126T145419-20180126T145619_%T1_1/SegResults.pkl', 'rb') as handle:
+    # with open(video_path + 'SegResults.pkl', 'rb') as handle:
         masks = pickle.load(handle)
         # masks = joblib.load(handle, mmap_mode="r")
     gc.enable()
@@ -787,15 +793,15 @@ def main():
     for idx, el in enumerate(names):
         name_indicators[idx] = el
 
-    # base_path = '/media/nexus/storage1/swissknife_data/primate/inference/segmentation_highres_multi/'
-    base_path = '/media/nexus/storage1/swissknife_data/primate/inference/segmentation_new/2018_2/'
-    # base_path = '/Users/marksm/swissknife_data/primate/inference/segmentation/'
+    # base_path = '/media/nexus/storage1/swissknife_data/primate/inference/segmentation_new/2018_2/'
+    base_path = '/Users/marksm/swissknife_data/primate/inference/segmentation/'
     if not os.path.exists(results_sink):
         os.makedirs(results_sink)
 
     future = None
     executor = None
     myhandler = None
+    idx = 0
 
     for video_id, filename in enumerate(videos_primate):
 
@@ -814,16 +820,13 @@ def main():
         else:
             masks = load_mask(video_path)
         print('loading mask took', time.time() - start)
+        print('len masks', str(len(masks)))
         idx = int(filename.split('1_')[-1])
         batch_size = 10000
         masks = masks[idx * batch_size:(idx + 1) * batch_size]
-        # if video complete go to next video
-        # res = np.load(results_sink + video + '.npy')
-        # if not len(res) < num_masks:
-        #     continue
 
         frames_path = video_path + 'frames/'
-        stepsize = 100
+        stepsize = 50
 
         print('initiating handler')
         # init handler
