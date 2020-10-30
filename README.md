@@ -1,4 +1,4 @@
-# idtracking_gui
+# Idtracking GUI accompanying SIPEC
 
 ## usage
 
@@ -40,5 +40,13 @@ pip install -r requirements.txt
 ```
 and Done!
 
-Download the example files from here and put it into the github repo!
-https://www.dropbox.com/sh/i332f9mbq002anh/AAChK6KSJb3Q91k7xOfa52Jga?dl=0
+
+## Cite:
+
+If you use any part of this code for your work, please cite the following:
+
+  ```
+  SIPEC: the deep-learning Swiss knife for behavioral data analysis
+  Markus Marks, Jin Qiuhan, Oliver Sturman, Lukas von Ziegler, Sepp Kollmorgen, Wolfger von der Behrens, Valerio Mante, Johannes Bohacek, Mehmet Fatih Yanik
+  bioRxiv 2020.10.26.355115; doi: https://doi.org/10.1101/2020.10.26.355115
+  ```
